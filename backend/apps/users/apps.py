@@ -1,0 +1,15 @@
+"""
+Конфигурация приложения Users.
+"""
+
+from django.apps import AppConfig
+
+
+class UsersConfig(AppConfig):
+    default_auto_field = 'django.db.models.BigAutoField'
+    name = 'apps.users'
+    verbose_name = 'Пользователи'
+    
+    def ready(self):
+        # Импорт сигналов при готовности приложения
+        from . import signals
