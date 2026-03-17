@@ -4,6 +4,7 @@ Views for the payments app.
 Handles payment processing, Robokassa integration, and course access management.
 """
 import hashlib
+import logging
 from decimal import Decimal
 from django.utils import timezone
 from django.conf import settings
@@ -17,8 +18,11 @@ from rest_framework.decorators import api_view, permission_classes
 from django.shortcuts import get_object_or_404, render
 from orders.models import Order
 from courses.models import Course
-from .models import UserCourseAccess
+from access.models import UserCourseAccess
+from .models import PaymentNotification
 from .serializers import PaymentSerializer, OrderCreateSerializer
+
+logger = logging.getLogger('payments')
 
 
 class RobokassaService:
@@ -30,7 +34,7 @@ class RobokassaService:
         self.merchant_login = settings.ROBOKASSA_LOGIN
         self.password1 = settings.ROBOKASSA_PASSWORD1
         self.password2 = settings.ROBOKASSA_PASSWORD2
-        self.is_test = settings.ROBOKASSA_IS_TEST
+        self.is_test = getattr(settings, 'ROBOKASSA_IS_TEST', True)
     
     def _generate_signature(self, *args, password=None) -> str:
         """Generate MD5 signature for Robokassa."""
@@ -101,7 +105,7 @@ class PaymentViewSet(viewsets.ViewSet):
         
         if existing_access:
             return Response(
-                {'error': 'You already have access to this course'},
+                {'error': 'Вы уже имеете доступ к этому курсу'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
@@ -118,6 +122,8 @@ class PaymentViewSet(viewsets.ViewSet):
             robokassa_inv_id=inv_id,
             status='pending'
         )
+        
+        logger.info(f"Создан заказ {order.id} для пользователя {request.user.email} на сумму {order.amount}")
         
         # Generate Robokassa payment URL
         robokassa = RobokassaService()
@@ -154,22 +160,26 @@ class RobokassaWebhookView(APIView):
     
     def post(self, request):
         params = request.POST
+        logger.debug(f"Получен вебхук от Robokassa: {dict(params)}")
         
         robokassa = RobokassaService()
         
         # Verify signature
         if not robokassa.verify_webhook_signature(params):
+            logger.warning(f"Неверная подпись вебхука: {params.get('InvId')}")
             return HttpResponse('Bad signature', status=400)
         
         # Get order
         try:
             order_id = int(params.get('InvId'))
             order = Order.objects.select_related('user', 'course').get(id=order_id)
-        except (Order.DoesNotExist, ValueError):
+        except (Order.DoesNotExist, ValueError) as e:
+            logger.error(f"Заказ не найден: {params.get('InvId')}, ошибка: {e}")
             return HttpResponse('Order not found', status=404)
         
         # Check if order is already paid
         if order.status == 'paid':
+            logger.info(f"Заказ {order.id} уже оплачен, возвращаем OK")
             return HttpResponse(f'OK|{order.id}')
         
         # Update order
@@ -179,11 +189,25 @@ class RobokassaWebhookView(APIView):
         order.robokassa_signature = params.get('SignatureValue')
         order.save()
         
+        logger.info(f"Заказ {order.id} отмечен как оплаченный")
+        
         # Grant access to course
-        UserCourseAccess.objects.get_or_create(
+        access, created = UserCourseAccess.objects.get_or_create(
             user=order.user,
             course=order.course,
             defaults={'granted_by': order.user}
+        )
+        
+        if created:
+            logger.info(f"Предоставлен доступ пользователю {order.user.email} к курсу {order.course.title}")
+        else:
+            logger.info(f"Доступ пользователя {order.user.email} к курсу {order.course.title} уже существовал")
+        
+        # Log payment notification
+        PaymentNotification.objects.create(
+            order=order,
+            raw_data=dict(params),
+            processed=True
         )
         
         # TODO: Send success email asynchronously
@@ -230,3 +254,30 @@ class PaymentFailView(APIView):
                 pass
         
         return render(request, 'payments/fail.html', {'order': None})
+
+
+class HealthCheckView(APIView):
+    """
+    Health check endpoint for Amvera monitoring.
+    Returns 200 OK if application is healthy.
+    """
+    permission_classes = []
+    
+    def get(self, request):
+        try:
+            # Check database connection
+            from django.db import connection
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT 1")
+            
+            return Response({
+                'status': 'healthy',
+                'database': 'connected',
+                'debug': settings.DEBUG
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.error(f"Health check failed: {e}")
+            return Response({
+                'status': 'unhealthy',
+                'error': str(e)
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)

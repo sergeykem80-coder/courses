@@ -1,0 +1,50 @@
+# Amvera Configuration File
+# Документация: https://docs.amvera.ru/
+
+[build]
+# Путь к Dockerfile относительно корня проекта (где лежит amvera.toml)
+dockerfile = "Dockerfile"
+
+# Контекст сборки - текущая директория (backend)
+context = "."
+
+[run]
+# Переменные окружения для runtime
+env = { PORT = "8000", DJANGO_SETTINGS_MODULE = "config.settings" }
+
+# Ресурсы контейнера
+resources = { cpu = "1", memory = "1024" }
+
+# Хранилище для медиафайлов и статики
+volumes = [
+    { mountPath = "/app/media", name = "media-storage", size = "1Gi" },
+    { mountPath = "/app/staticfiles", name = "static-storage", size = "512Mi" }
+]
+
+[healthcheck]
+# Проверка здоровья приложения
+endpoint = "/api/health/"
+interval = 30
+timeout = 10
+retries = 3
+
+[network]
+# Порты (Amvera автоматически маппит PORT из env)
+ports = [{ containerPort = 8000, protocol = "http" }]
+
+[secrets]
+# Чувствительные данные загружаются через Secrets в панели управления Amvera
+# или через CLI: amvera secrets set SECRET_KEY=value
+# Список ожидаемых секретов (для документации):
+# - SECRET_KEY
+# - POSTGRES_DB
+# - POSTGRES_USER  
+# - POSTGRES_PASSWORD
+# - POSTGRES_HOST
+# - POSTGRES_PORT
+# - ROBOKASSA_LOGIN
+# - ROBOKASSA_PASSWORD1
+# - ROBOKASSA_PASSWORD2
+# - KINESCOPE_API_TOKEN
+# - EMAIL_HOST_USER
+# - EMAIL_HOST_PASSWORD

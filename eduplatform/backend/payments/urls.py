@@ -10,6 +10,7 @@ from .views import (
     RobokassaWebhookView,
     PaymentSuccessView,
     PaymentFailView,
+    HealthCheckView,
 )
 
 router = DefaultRouter()
@@ -20,6 +21,9 @@ app_name = 'payments'
 urlpatterns = [
     # Router URLs
     path('', include(router.urls)),
+    
+    # Health check endpoint for Amvera monitoring
+    path('health/', HealthCheckView.as_view(), name='health-check'),
     
     # Robokassa webhook (no authentication required)
     path('robokassa-webhook/', RobokassaWebhookView.as_view(), name='robokassa-webhook'),

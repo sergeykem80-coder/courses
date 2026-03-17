@@ -6,6 +6,41 @@ Includes access tracking models for user-course relationships.
 from django.db import models
 from django.conf import settings
 from courses.models import Course, Lesson
+from orders.models import Order
+
+
+class PaymentNotification(models.Model):
+    """
+    Stores raw webhook notifications from payment systems.
+    Useful for debugging and audit trails.
+    """
+    order = models.ForeignKey(
+        Order,
+        on_delete=models.CASCADE,
+        related_name='payment_notifications',
+        verbose_name="Заказ"
+    )
+    raw_data = models.JSONField(
+        default=dict,
+        verbose_name="Исходные данные"
+    )
+    processed = models.BooleanField(
+        default=False,
+        verbose_name="Обработано"
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Дата получения"
+    )
+    
+    class Meta:
+        db_table = 'payment_notifications'
+        verbose_name = "Платёжное уведомление"
+        verbose_name_plural = "Платёжные уведомления"
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"Notification for Order {self.order.id} - {'Processed' if self.processed else 'Pending'}"
 
 
 class UserCourseAccess(models.Model):

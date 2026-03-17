@@ -22,11 +22,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = decouple_config('SECRET_KEY', default='django-insecure-change-this-in-production')
+# Для Amvera: SECRET_KEY должен быть установлен через Secrets в панели управления
+SECRET_KEY = decouple_config('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = decouple_config('DEBUG', default=True, cast=bool)
+# На Amvera DEBUG всегда должен быть False
+DEBUG = decouple_config('DEBUG', default=False, cast=bool)
 
+# ALLOWED_HOSTS - домены вашего приложения на Amvera
+# Пример: your-app.amvera.io, ваш-домен.ru
 ALLOWED_HOSTS = decouple_config('ALLOWED_HOSTS', default='localhost,127.0.0.1').split(',')
 
 
@@ -84,26 +88,24 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
+# Для Amvera: используйте PostgreSQL как сервис (Database) в панели управления
+# Все параметры подключаются через Secrets
 
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': decouple_config('POSTGRES_DB', default='eduplatform'),
-        'USER': decouple_config('POSTGRES_USER', default='eduser'),
-        'PASSWORD': decouple_config('POSTGRES_PASSWORD', default='edpassword'),
-        'HOST': decouple_config('POSTGRES_HOST', default='localhost'),
+        'NAME': decouple_config('POSTGRES_DB'),
+        'USER': decouple_config('POSTGRES_USER'),
+        'PASSWORD': decouple_config('POSTGRES_PASSWORD'),
+        'HOST': decouple_config('POSTGRES_HOST'),
         'PORT': decouple_config('POSTGRES_PORT', default='5432'),
+        # Настройки для production
+        'CONN_MAX_AGE': 600,  # Постоянные соединения
+        'OPTIONS': {
+            'connect_timeout': 10,
+        },
     }
 }
-
-# For development with SQLite (fallback)
-if DEBUG and 'sqlite' in decouple_config('DATABASE_URL', default=''):
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
-        }
-    }
 
 
 # Password validation
@@ -143,8 +145,13 @@ USE_TZ = True
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
+# Для Amvera: медиафайлы хранятся в volume /app/media
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+# Настройки для WhiteNoise (опционально, для раздачи статики через Django)
+# Если используете Nginx на Amvera, можно отключить
+# STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/6.0/ref/settings/#default-auto-field
@@ -201,15 +208,65 @@ KINESCOPE_API_TOKEN = decouple_config('KINESCOPE_API_TOKEN', default='')
 
 # Email settings
 EMAIL_HOST = decouple_config('EMAIL_HOST', default='smtp.sendpulse.com')
-EMAIL_HOST_USER = decouple_config('EMAIL_HOST_USER', default='')
-EMAIL_HOST_PASSWORD = decouple_config('EMAIL_HOST_PASSWORD', default='')
+EMAIL_HOST_USER = decouple_config('EMAIL_HOST_USER')
+EMAIL_HOST_PASSWORD = decouple_config('EMAIL_HOST_PASSWORD')
 EMAIL_PORT = decouple_config('EMAIL_PORT', default=587, cast=int)
 EMAIL_USE_TLS = True
 DEFAULT_FROM_EMAIL = decouple_config('DEFAULT_FROM_EMAIL', default='noreply@eduplatform.ru')
 
-# Security settings (for production)
+# Логирование для Amvera (вывод в stdout/stderr для сбора логов платформой)
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'payments': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+    },
+}
+
+# Security settings (для production на Amvera)
 if not DEBUG:
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
-    SECURE_HSTS_SECONDS = 3600
+    SECURE_HSTS_SECONDS = 31536000  # 1 год
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    
+    # Настройки для доверенных прокси (Amvera использует reverse proxy)
+    USE_X_FORWARDED_HOST = True
+    USE_X_FORWARDED_PORT = True
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+# Health check endpoint для Amvera
+def HEALTH_CHECK_ENABLED():
+    """Проверка здоровья приложения"""
+    return True
