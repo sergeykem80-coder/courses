@@ -21,26 +21,36 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual Environment
+# Virtual environments
 venv/
-ENV/
 env/
+ENV/
 .venv/
 .env/
-env.bak/
-venv.bak/
 
-# Django
+# Django specific
 *.log
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
+media/
+staticfiles/
+.env
 
 # IDE
 .vscode/
 .idea/
+*.swp
+*.swo
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Testing
+.coverage
+htmlcov/
+.coverage.*
+.nox/
+.tox/
 ```
